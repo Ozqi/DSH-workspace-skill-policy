@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workspace Skill Policy",
+    "description": "Blocks selected DeepSeek Harness skills for individual workspaces."
+  }
+}

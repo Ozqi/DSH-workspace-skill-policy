@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "工作区 Skill 策略",
+    "description": "为各个工作区分别禁用指定的 DeepSeek Harness skill。"
+  }
+}

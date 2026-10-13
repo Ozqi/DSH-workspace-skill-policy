@@ -1,0 +1,20 @@
+{
+  "name": "@ozqi/dsh-workspace-skill-policy",
+  "version": "1.0.0",
+  "description": "Blocks selected DeepSeek Harness skills per workspace.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ozqi/DSH-workspace-skill-policy.git"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

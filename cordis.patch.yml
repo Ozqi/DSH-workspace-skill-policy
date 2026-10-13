@@ -1,0 +1,3 @@
+- insert:
+    - id: workspace-skill-policy
+      name: '@ozqi/dsh-workspace-skill-policy'
