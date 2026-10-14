@@ -1,6 +1,6 @@
 # DSH Workspace Skill Policy
 
-A DeepSeek Harness plugin for blocking selected skills in individual workspaces.
+A DeepSeek Harness Web plugin for enabling or disabling workspace skills per Session.
 
 ## Install
 
@@ -10,7 +10,19 @@ dsh plugin --profile web add github:Ozqi/DSH-workspace-skill-policy
 
 Restart the active profile if the plugin manager reports that a restart is required.
 
-## Commands
+## Use it
+
+Open the right Sidebar and choose **Skill policy**. The panel lists skills visible to the selected Session plus skills detected under common workspace skill roots:
+
+- `.agents/skills/<name>/SKILL.md`
+- `.dsh/skills/<name>/SKILL.md`
+- `.agent/skills/<name>/SKILL.md`
+- `.agent/<name>/SKILL.md`
+- `.agent/*/skills/<name>/SKILL.md`
+
+Use each row's switch to enable or disable that skill for the current Session. Disabled skills are hidden from both model and user invocation for that Session.
+
+The `/skills` command remains as a text fallback:
 
 ```text
 /skills list
@@ -19,9 +31,7 @@ Restart the active profile if the plugin manager reports that a restart is requi
 /skills clear
 ```
 
-Policies are stored in `workspace-skill-policy.json` under `DSH_HOME` (normally `~/.dsh`). The file is written with owner-only permissions. A blocked skill is hidden from both model and user invocation for sessions in that registered workspace.
-
-The command returns an error when the current directory does not belong to a registered workspace. Skill names must use lowercase kebab-case.
+Policies are stored in `workspace-skill-policy.json` under `DSH_HOME` (normally `~/.dsh`). The file is written with owner-only permissions.
 
 ## License
 

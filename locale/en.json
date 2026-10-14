@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Workspace Skill Policy",
-    "description": "Blocks selected DeepSeek Harness skills for individual workspaces."
+    "title": "Session Skill Policy",
+    "description": "Shows workspace skills for each Session and lets you enable or disable them."
   }
 }

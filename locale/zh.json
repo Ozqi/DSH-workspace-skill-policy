@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "工作区 Skill 策略",
-    "description": "为各个工作区分别禁用指定的 DeepSeek Harness skill。"
+    "title": "Session Skill 策略",
+    "description": "按 Session 展示 workspace skills，并可视化开启或关闭它们。"
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "@ozqi/dsh-workspace-skill-policy",
-  "version": "1.0.0",
-  "description": "Blocks selected DeepSeek Harness skills per workspace.",
+  "version": "1.1.0",
+  "description": "Session skill policy panel for DeepSeek Harness with workspace skill discovery.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -11,10 +11,17 @@
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-locale"]
+    }
+  }
 }
