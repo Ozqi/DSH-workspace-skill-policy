@@ -3,7 +3,7 @@ import { dirname, join, relative } from 'node:path'
 import { homedir } from 'node:os'
 
 export const name = 'workspace-skill-policy'
-export const inject = ['commands', 'connection', 'skills', 'workingDirectory', 'workspaceRegistry', 'sessions', 'agents', 'agentPresets']
+export const inject = ['commands', 'connection', 'skills', 'workingDirectory', 'workspaceRegistry', 'sessions', 'agents', 'agentPresets', 'subprocess']
 
 const PROVIDER = 'workspace-skill-policy'
 const DISABLED = Object.freeze({ modelInvocable: false, userInvocable: false })
@@ -88,6 +88,7 @@ function candidate(skillName) {
 }
 
 export function apply(ctx) {
+  const updates = new Map()
   let invalidate
   ctx.effect(() => ctx.skills.registerProvider((control) => {
     invalidate = control.invalidate
@@ -134,18 +135,35 @@ export function apply(ctx) {
     path: ROUTE,
     methods: ['GET', 'POST'],
     requestBody: 'buffered',
-    fetch: request => route(ctx, request, () => { invalidate?.() }),
+    fetch: request => route(ctx, request, () => { invalidate?.() }, updates),
   }), 'workspace-skill-policy: route')
 }
 
-async function route(ctx, request, invalidate) {
+async function route(ctx, request, invalidate, updates) {
   try {
-    if (request.method === 'GET') return Response.json(await snapshot(ctx, new URL(request.url).searchParams.get('sessionId'), request.signal), noStore())
+    if (request.method === 'GET') {
+      const params = new URL(request.url).searchParams
+      const sessionId = params.get('sessionId')
+      const skillName = params.get('skill')
+      return Response.json(skillName === null
+        ? await snapshot(ctx, sessionId, request.signal)
+        : await skillContent(ctx, sessionId, skillName, request.signal), noStore())
+    }
     const body = await request.json()
     if (!body || typeof body !== 'object') return text('Invalid request.', 400)
     const sessionId = body.sessionId
+    if (typeof sessionId !== 'string') return text('Invalid request.', 400)
     const name = body.name
-    if (typeof sessionId !== 'string' || !isSkillName(name) || typeof body.disabled !== 'boolean') return text('Invalid request.', 400)
+    if (body.action === 'update') {
+      if (!isSkillName(name)) return text('Invalid request.', 400)
+      const key = `${sessionId}:${name}`
+      const existing = updates.get(key)
+      if (existing) return Response.json(await existing, noStore())
+      const pending = updateSkill(ctx, sessionId, name, request.signal)
+      updates.set(key, pending)
+      try { return Response.json(await pending, noStore()) } finally { if (updates.get(key) === pending) updates.delete(key) }
+    }
+    if (!isSkillName(name) || typeof body.disabled !== 'boolean') return text('Invalid request.', 400)
     const policies = await readPolicies()
     const current = new Set(arrayAt(policies.sessions, sessionId))
     if (body.disabled) current.add(name)
@@ -168,13 +186,17 @@ function text(message, status) {
   return new Response(message, { status, headers: { 'cache-control': 'no-store' } })
 }
 
-async function snapshot(ctx, sessionId, signal) {
+async function sessionContext(ctx, sessionId, signal) {
   if (!sessionId) throw new Error('Missing session id.')
   const session = ctx.sessions.get(sessionId)
   if (!session) throw new Error(`Session not found: ${sessionId}`)
   const agent = ctx.agents.get(sessionId)
   const cwd = agent ? await ctx.workingDirectory.ensure(agent, signal) : ctx.workingDirectory.get(session)
-  const workspace = await workspaceForCwd(ctx, cwd)
+  return { session, agent, cwd, workspace: await workspaceForCwd(ctx, cwd) }
+}
+
+async function snapshot(ctx, sessionId, signal) {
+  const { agent, cwd, workspace } = await sessionContext(ctx, sessionId, signal)
   const policies = await readPolicies()
   const disabled = new Set(blockedNames(policies, sessionId, workspace?.id))
   const catalog = await visibleCatalog(ctx, cwd, agent, signal)
@@ -183,6 +205,10 @@ async function snapshot(ctx, sessionId, signal) {
   for (const skill of [...catalog, ...detected, ...[...disabled].map(name => ({ name, description: '', sources: [] }))]) {
     const existing = byName.get(skill.name)
     byName.set(skill.name, mergeSkill(existing, skill, disabled.has(skill.name)))
+  }
+  for (const skill of byName.values()) {
+    const github = await githubInfo(ctx, cwd, skill.sources, signal)
+    if (github) skill.github = { url: github.url, fileUrl: github.fileUrl, updatable: true }
   }
   return {
     sessionId,
@@ -194,6 +220,59 @@ async function snapshot(ctx, sessionId, signal) {
   }
 }
 
+async function updateSkill(ctx, sessionId, name, signal) {
+  const { agent, cwd } = await sessionContext(ctx, sessionId, signal)
+  const catalog = await visibleCatalog(ctx, cwd, agent, signal)
+  const detected = await detectSkills(cwd)
+  const skill = [...catalog, ...detected].find(entry => entry.name === name)
+  const github = skill ? await githubInfo(ctx, cwd, skill.sources, signal) : undefined
+  if (!github) throw new Error(`Skill has no GitHub repository: ${name}`)
+  const git = await ctx.subprocess.resolveExecutable('git', undefined, signal)
+  const handle = ctx.subprocess.spawn({
+    argv: [git, 'pull', '--ff-only'],
+    cwd: github.repoRoot,
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
+    graceMs: 1_000,
+    signal,
+    env: { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+  })
+  const outcome = await handle.done
+  signal.throwIfAborted()
+  const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
+  const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
+  if (outcome.exitCode !== 0) throw new Error(stderr || stdout || 'git pull failed')
+  return { ok: true, name, repo: github.url, output: stdout || stderr || 'Already up to date.' }
+}
+
+async function skillContent(ctx, sessionId, name, signal) {
+  if (!isSkillName(name)) throw new Error('Invalid skill name.')
+  const { agent, cwd } = await sessionContext(ctx, sessionId, signal)
+  const catalog = await visibleCatalog(ctx, cwd, agent, signal)
+  const detected = await detectSkills(cwd)
+  const skill = [...catalog, ...detected].find(entry => entry.name === name)
+  if (!skill) throw new Error(`Skill not found: ${name}`)
+  const paths = uniqueSources(skill.sources ?? []).map(source => source.path)
+  for (const path of paths) {
+    const absolute = path.startsWith('/') ? path : join(cwd, path)
+    try {
+      const content = await readFile(absolute, 'utf8')
+      signal.throwIfAborted()
+      return { name, path, content }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+  }
+  const definition = await loadCatalogSkill(ctx, agent, cwd, name, signal)
+  if (definition?.content !== undefined) return { name, path: definition.path ?? null, content: definition.content }
+  throw new Error(`Skill content unavailable: ${name}`)
+}
+
+async function loadCatalogSkill(ctx, agent, cwd, name, signal) {
+  const scoped = agent ? ctx.agentPresets?.serviceFor?.(agent, 'skills') : undefined
+  const service = scoped?.get ? scoped : ctx.skills
+  return service.get(name, { cwd, scope: agent, signal })
+}
+
 async function visibleCatalog(ctx, cwd, agent, signal) {
   const list = agent && ctx.agentPresets?.serviceFor?.(agent, 'skills')?.list ? ctx.agentPresets.serviceFor(agent, 'skills').list.bind(ctx.agentPresets.serviceFor(agent, 'skills')) : ctx.skills.list.bind(ctx.skills)
   try {
@@ -202,11 +281,63 @@ async function visibleCatalog(ctx, cwd, agent, signal) {
       description: skill.description || '',
       modelInvocable: skill.invocation?.modelInvocable !== false,
       userInvocable: skill.invocation?.userInvocable !== false,
-      sources: skill.path ? [{ kind: 'catalog', path: skill.path }] : [],
+      sources: skill.path ? [{ kind: 'catalog', path: skill.path.startsWith(cwd) ? relative(cwd, skill.path) : skill.path }] : [],
     }))
   } catch {
     return []
   }
+}
+
+async function githubInfo(ctx, cwd, sources, signal) {
+  for (const source of sources ?? []) {
+    const file = source.path?.startsWith('/') ? source.path : join(cwd, source.path || '')
+    const repoRoot = await gitTopLevel(ctx, file, signal)
+    if (!repoRoot) continue
+    const remote = await gitRemote(ctx, repoRoot, signal)
+    const normalized = normalizeGithubRemote(remote)
+    if (!normalized) continue
+    const branch = await gitOutput(ctx, repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], signal).catch(() => '')
+    const rel = relative(repoRoot, file).split(/[\\/]/u).map(encodeURIComponent).join('/')
+    return {
+      url: normalized,
+      repoRoot,
+      fileUrl: `${normalized}/blob/${encodeURIComponent(branch || 'main')}/${rel}`,
+    }
+  }
+}
+
+async function gitTopLevel(ctx, path, signal) {
+  const cwd = dirname(path)
+  return gitOutput(ctx, cwd, ['rev-parse', '--show-toplevel'], signal).catch(() => undefined)
+}
+
+async function gitRemote(ctx, cwd, signal) {
+  return gitOutput(ctx, cwd, ['config', '--get', 'remote.origin.url'], signal).catch(() => undefined)
+}
+
+async function gitOutput(ctx, cwd, args, signal) {
+  const git = await ctx.subprocess.resolveExecutable('git', undefined, signal)
+  const handle = ctx.subprocess.spawn({
+    argv: [git, ...args],
+    cwd,
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 16 * 1024 }, stderr: { maxBytes: 16 * 1024 } },
+    graceMs: 1_000,
+    signal,
+    env: { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+  })
+  const outcome = await handle.done
+  signal?.throwIfAborted?.()
+  if (outcome.exitCode !== 0) throw new Error(handle.collected.stderr?.readFrom(0).text.trim() || 'git failed')
+  return (handle.collected.stdout?.readFrom(0).text ?? '').trim()
+}
+
+function normalizeGithubRemote(remote) {
+  if (!remote) return undefined
+  const trimmed = remote.trim().replace(/\.git$/u, '')
+  const https = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/u)
+  if (https) return `https://github.com/${https[1]}/${https[2]}`
+  const ssh = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+)$/u)
+  if (ssh) return `https://github.com/${ssh[1]}/${ssh[2]}`
 }
 
 function mergeSkill(existing, next, disabled) {
