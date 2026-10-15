@@ -1,6 +1,6 @@
 {
   "name": "@ozqi/dsh-workspace-skill-policy",
-  "version": "1.2.0",
+  "version": "0.2.0",
   "description": "Session skill policy panel for DeepSeek Harness with workspace skill discovery.",
   "type": "module",
   "license": "MIT",
