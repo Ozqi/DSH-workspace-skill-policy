@@ -88,7 +88,6 @@ function candidate(skillName) {
 }
 
 export function apply(ctx) {
-  const updates = new Map()
   let invalidate
   ctx.effect(() => ctx.skills.registerProvider((control) => {
     invalidate = control.invalidate
@@ -135,11 +134,11 @@ export function apply(ctx) {
     path: ROUTE,
     methods: ['GET', 'POST'],
     requestBody: 'buffered',
-    fetch: request => route(ctx, request, () => { invalidate?.() }, updates),
+    fetch: request => route(ctx, request, () => { invalidate?.() }),
   }), 'workspace-skill-policy: route')
 }
 
-async function route(ctx, request, invalidate, updates) {
+async function route(ctx, request, invalidate) {
   try {
     if (request.method === 'GET') {
       const params = new URL(request.url).searchParams
@@ -154,15 +153,6 @@ async function route(ctx, request, invalidate, updates) {
     const sessionId = body.sessionId
     if (typeof sessionId !== 'string') return text('Invalid request.', 400)
     const name = body.name
-    if (body.action === 'update') {
-      if (!isSkillName(name)) return text('Invalid request.', 400)
-      const key = `${sessionId}:${name}`
-      const existing = updates.get(key)
-      if (existing) return Response.json(await existing, noStore())
-      const pending = updateSkill(ctx, sessionId, name, request.signal)
-      updates.set(key, pending)
-      try { return Response.json(await pending, noStore()) } finally { if (updates.get(key) === pending) updates.delete(key) }
-    }
     if (!isSkillName(name) || typeof body.disabled !== 'boolean') return text('Invalid request.', 400)
     const policies = await readPolicies()
     const current = new Set(arrayAt(policies.sessions, sessionId))
@@ -208,7 +198,7 @@ async function snapshot(ctx, sessionId, signal) {
   }
   for (const skill of byName.values()) {
     const github = await githubInfo(ctx, cwd, skill.sources, signal)
-    if (github) skill.github = { url: github.url, fileUrl: github.fileUrl, updatable: true }
+    if (github) skill.github = { url: github.url, fileUrl: github.fileUrl }
   }
   return {
     sessionId,
@@ -218,30 +208,6 @@ async function snapshot(ctx, sessionId, signal) {
     skills: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
     roots: summarizeRoots(detected),
   }
-}
-
-async function updateSkill(ctx, sessionId, name, signal) {
-  const { agent, cwd } = await sessionContext(ctx, sessionId, signal)
-  const catalog = await visibleCatalog(ctx, cwd, agent, signal)
-  const detected = await detectSkills(cwd)
-  const skill = [...catalog, ...detected].find(entry => entry.name === name)
-  const github = skill ? await githubInfo(ctx, cwd, skill.sources, signal) : undefined
-  if (!github) throw new Error(`Skill has no GitHub repository: ${name}`)
-  const git = await ctx.subprocess.resolveExecutable('git', undefined, signal)
-  const handle = ctx.subprocess.spawn({
-    argv: [git, 'pull', '--ff-only'],
-    cwd: github.repoRoot,
-    stdio: { stdin: 'ignore', stdout: { maxBytes: 64 * 1024 }, stderr: { maxBytes: 64 * 1024 } },
-    graceMs: 1_000,
-    signal,
-    env: { GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
-  })
-  const outcome = await handle.done
-  signal.throwIfAborted()
-  const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
-  const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
-  if (outcome.exitCode !== 0) throw new Error(stderr || stdout || 'git pull failed')
-  return { ok: true, name, repo: github.url, output: stdout || stderr || 'Already up to date.' }
 }
 
 async function skillContent(ctx, sessionId, name, signal) {

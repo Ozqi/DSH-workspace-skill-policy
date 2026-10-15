@@ -21,9 +21,6 @@ window.__ModuleLoader__.load({
       noWorkspace: '无工作区',
       loadError: '读取失败：{message}',
       updateError: '更新失败：{message}',
-      updateOk: '{name} 已更新：{output}',
-      update: '更新',
-      updating: '更新中…',
       noGithub: '未发现 GitHub 链接',
       enabled: '已开启',
       disabled: '已关闭',
@@ -52,9 +49,6 @@ window.__ModuleLoader__.load({
       noWorkspace: 'No workspace',
       loadError: 'Load failed: {message}',
       updateError: 'Update failed: {message}',
-      updateOk: '{name} updated: {output}',
-      update: 'Update',
-      updating: 'Updating…',
       noGithub: 'No GitHub link found',
       enabled: 'Enabled',
       disabled: 'Disabled',
@@ -99,7 +93,6 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = React.useState(true);
       const [notice, setNotice] = React.useState(null);
       const [busy, setBusy] = React.useState(new Set());
-      const [updating, setUpdating] = React.useState(new Set());
       const [expanded, setExpanded] = React.useState(null);
       const [contents, setContents] = React.useState({});
 
@@ -146,29 +139,6 @@ window.__ModuleLoader__.load({
           });
       }, [sessionId, tab.signal, t]);
 
-      const update = React.useCallback((skill) => {
-        setUpdating(current => new Set(current).add(skill.name));
-        setNotice(null);
-        fetch(ROUTE, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'update', sessionId, name: skill.name }),
-          signal: tab.signal,
-        }).then(async response => {
-          if (!response.ok) throw new Error(await response.text());
-          return response.json();
-        }).then(result => {
-          if (!tab.signal.aborted) {
-            setNotice(t('updateOk', { name: skill.name, output: result.output || '' }));
-            load();
-          }
-        }).catch(error => {
-          if (!tab.signal.aborted) setNotice(t('updateError', { message: messageOf(error) }));
-        }).finally(() => {
-          if (!tab.signal.aborted) setUpdating(current => { const next = new Set(current); next.delete(skill.name); return next; });
-        });
-      }, [load, sessionId, tab.signal, t]);
-
       const toggleContent = React.useCallback((name) => {
         if (expanded === name) { setExpanded(null); return; }
         setExpanded(name);
@@ -209,20 +179,23 @@ window.__ModuleLoader__.load({
             content: contents[skill.name],
             expanded: expanded === skill.name,
             busy: busy.has(skill.name),
-            updating: updating.has(skill.name),
             t,
             toggle,
-            update,
             toggleContent,
           }))));
     }
 
-    function SkillRow({ skill, content, expanded, busy, updating, t, toggle, update, toggleContent }) {
+    function SkillRow({ skill, content, expanded, busy, t, toggle, toggleContent }) {
       const sources = Array.isArray(skill.sources) ? skill.sources : [];
       const flags = [
         skill.modelInvocable === false ? t('userOnly') : null,
         skill.userInvocable === false ? t('modelOnly') : null,
       ].filter(Boolean);
+      const contentBody = expanded ? h('div', { className: 'wsp-content' },
+        h('div', { className: 'wsp-content-title' }, t('content')),
+        content?.kind === 'ready' ? h('pre', null, content.value.content) : null,
+        content?.kind === 'failed' ? h('div', { className: 'wsp-content-state wsp-content-error' }, t('contentUnavailable', { message: content.message })) : null,
+        (!content || content.kind === 'loading') ? h('div', { className: 'wsp-content-state' }, t('contentLoading')) : null) : null;
       return h('article', { className: `wsp-card ${skill.disabled ? 'is-disabled' : ''}`, 'data-skill-name': skill.name },
         h('div', { className: 'wsp-card-head' },
           h('button', {
@@ -248,18 +221,13 @@ window.__ModuleLoader__.load({
               'aria-label': t(skill.disabled ? 'enableSkill' : 'disableSkill', { name: skill.name }),
               disabled: busy,
               onClick: () => toggle(skill),
-            }, h('span', null)),
-            skill.github?.updatable ? h('button', { type: 'button', className: 'wsp-update', disabled: updating, onClick: () => update(skill) }, updating ? t('updating') : t('update')) : null)),
+            }, h('span', null)))),
         h('div', { className: 'wsp-paths' },
           h('span', { className: 'wsp-path-label' }, t('sourcePath')),
           sources.length > 0
             ? h('div', { className: 'wsp-path-list' }, sources.map((source, index) => h('code', { key: `${source.kind}:${source.path}:${index}` }, source.path)))
             : h('code', null, '—')),
-        expanded ? h('div', { className: 'wsp-content' },
-          h('div', { className: 'wsp-content-title' }, t('content')),
-          content?.kind === 'ready' ? h('pre', null, content.value.content) : null,
-          content?.kind === 'failed' ? h('div', { className: 'wsp-content-state wsp-content-error' }, t('contentUnavailable', { message: content.message })) : null,
-          (!content || content.kind === 'loading') ? h('div', { className: 'wsp-content-state' }, t('contentLoading')) : null) : null);
+        contentBody);
     }
 
     function messageOf(error) {
@@ -318,9 +286,6 @@ window.__ModuleLoader__.load({
           .wsp-switch:disabled { opacity: 0.5; cursor: wait; }
           .wsp-switch span { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--dsw-alias-bg-layer-1); transition: transform 120ms ease; }
           .wsp-switch[aria-checked="true"] span { transform: translateX(16px); }
-          .wsp-update { padding: 3px 7px; border: 0.5px solid var(--dsw-alias-border-l1); border-radius: 6px; color: var(--dsw-alias-brand-primary); background: transparent; cursor: pointer; font-size: 11px; }
-          .wsp-update:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-2); }
-          .wsp-update:disabled { opacity: 0.5; cursor: wait; }
           .wsp-paths { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 9px; padding: 7px 10px 8px 40px; border-top: 0.5px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); }
           .wsp-path-label { color: var(--dsw-alias-label-secondary); font-size: 11px; }
           .wsp-path-list { display: grid; min-width: 0; gap: 3px; }

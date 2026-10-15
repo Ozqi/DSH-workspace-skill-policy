@@ -20,7 +20,7 @@ Open the right Sidebar and choose **Skill policy**. The panel lists skills visib
 - `.agent/<name>/SKILL.md`
 - `.agent/*/skills/<name>/SKILL.md`
 
-The header shows the enabled and total counts. Each row shows the skill name, description, every source path, the GitHub `SKILL.md` link when the skill lives in a GitHub-origin repository, and a Session-scoped switch. Expand a row to inspect its local `SKILL.md` content. GitHub-origin rows also show **Update**, which runs `git pull --ff-only` in that repository. Disabled skills are hidden from both model and user invocation for that Session.
+The header shows the enabled and total counts. Each row shows the skill name, description, every source path, the GitHub `SKILL.md` link used for updates when the file lives in a GitHub-backed repository, and a Session-scoped switch. Expand a row to inspect its local `SKILL.md` content. Disabled skills are hidden from both model and user invocation for that Session.
 
 The `/skills` command remains as a text fallback:
 
