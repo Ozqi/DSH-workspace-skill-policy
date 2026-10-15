@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
       noWorkspace: '无工作区',
       loadError: '读取失败：{message}',
       updateError: '更新失败：{message}',
-      noGithub: '未发现 GitHub 链接',
+      archivedGithub: '归档来源',
       enabled: '已开启',
       disabled: '已关闭',
       enableSkill: '开启 {name}',
@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
       noWorkspace: 'No workspace',
       loadError: 'Load failed: {message}',
       updateError: 'Update failed: {message}',
-      noGithub: 'No GitHub link found',
+      archivedGithub: 'Archived source',
       enabled: 'Enabled',
       disabled: 'Disabled',
       enableSkill: 'Enable {name}',
@@ -208,9 +208,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wsp-card-main' },
             h('div', { className: 'wsp-name-line' }, h('code', { className: 'wsp-name' }, skill.name), flags.map(flag => h('span', { key: flag, className: 'wsp-chip' }, flag))),
             skill.description ? h('div', { className: 'wsp-description' }, skill.description) : null,
-            skill.github?.fileUrl
-              ? h('a', { className: 'wsp-github', href: skill.github.fileUrl, target: '_blank', rel: 'noreferrer' }, `${t('github')}: ${skill.github.fileUrl}`)
-              : h('div', { className: 'wsp-github is-missing' }, t('noGithub'))),
+            h('a', { className: `wsp-github ${skill.github?.archived ? 'is-archived' : ''}`, href: skill.github.fileUrl, target: '_blank', rel: 'noreferrer' }, `${skill.github?.archived ? t('archivedGithub') : t('github')}: ${skill.github.fileUrl}`)),
           h('div', { className: 'wsp-state' },
             h('span', { className: 'wsp-state-label' }, skill.disabled ? t('disabled') : t('enabled')),
             h('button', {
@@ -278,7 +276,7 @@ window.__ModuleLoader__.load({
           .wsp-name { overflow: hidden; color: var(--dsw-alias-label-primary); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
           .wsp-description { display: -webkit-box; margin-top: 3px; overflow: hidden; color: var(--dsw-alias-label-secondary); line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
           .wsp-github { display: block; margin-top: 4px; overflow: hidden; color: var(--dsw-alias-brand-primary); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; text-decoration: none; }
-          .wsp-github.is-missing { color: var(--dsw-alias-label-tertiary); }
+          .wsp-github.is-archived { color: var(--dsw-alias-label-secondary); }
           .wsp-state { display: grid; flex: none; justify-items: end; gap: 4px; }
           .wsp-state-label { color: var(--dsw-alias-label-secondary); font-size: 11px; }
           .wsp-switch { position: relative; width: 34px; height: 18px; padding: 0; border: none; border-radius: 999px; background: var(--dsw-alias-state-idle-primary); cursor: pointer; transition: background 120ms ease; }

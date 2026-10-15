@@ -16,6 +16,7 @@ const ROOT_SPECS = Object.freeze([
   { root: ['.agent'], mode: 'nestedSkills' },
 ])
 const isSkillName = value => typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+const ARCHIVE_REPO = 'https://github.com/Ozqi/SKILLS'
 const storePath = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'workspace-skill-policy.json')
 
 async function readPolicies() {
@@ -198,7 +199,7 @@ async function snapshot(ctx, sessionId, signal) {
   }
   for (const skill of byName.values()) {
     const github = await githubInfo(ctx, cwd, skill.sources, signal)
-    if (github) skill.github = { url: github.url, fileUrl: github.fileUrl }
+    skill.github = github ?? archiveGithubInfo(skill.name)
   }
   return {
     sessionId,
@@ -251,6 +252,14 @@ async function visibleCatalog(ctx, cwd, agent, signal) {
     }))
   } catch {
     return []
+  }
+}
+
+function archiveGithubInfo(name) {
+  return {
+    url: ARCHIVE_REPO,
+    fileUrl: `${ARCHIVE_REPO}/blob/main/${encodeURIComponent(name)}/SKILL.md`,
+    archived: true,
   }
 }
 
